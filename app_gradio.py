@@ -102,17 +102,18 @@ def segment_everything(
         annotations = np.array([annotations])
     else:
         annotations = results[0].masks.data
-    
-    fig = fast_process(annotations=annotations,
-                       image=input,
-                       device=device,
-                       scale=(1024 // input_size),
-                       better_quality=better_quality,
-                       mask_random_color=mask_random_color,
-                       bbox=None,
-                       use_retina=use_retina,
-                       withContours=withContours,)
-    return fig
+
+    return fast_process(
+        annotations=annotations,
+        image=input,
+        device=device,
+        scale=(1024 // input_size),
+        better_quality=better_quality,
+        mask_random_color=mask_random_color,
+        bbox=None,
+        use_retina=use_retina,
+        withContours=withContours,
+    )
 
 
 def segment_with_points(

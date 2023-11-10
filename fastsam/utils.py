@@ -66,14 +66,8 @@ def bbox_iou(box1, boxes, iou_thres=0.9, image_shape=(640, 640), raw_output=Fals
     # compute the IoU
     iou = intersection / union  # Should be shape (n, )
     if raw_output:
-        if iou.numel() == 0:
-            return 0
-        return iou
-
-    # get indices of boxes with IoU > thres
-    high_iou_indices = torch.nonzero(iou > iou_thres).flatten()
-
-    return high_iou_indices
+        return 0 if iou.numel() == 0 else iou
+    return torch.nonzero(iou > iou_thres).flatten()
 
 
 def image_to_np_ndarray(image):

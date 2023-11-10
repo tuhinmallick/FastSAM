@@ -20,17 +20,14 @@ except (ImportError, AssertionError, AttributeError):
 class FastSAMPrompt:
 
     def __init__(self, image, results, device='cuda'):
-        if isinstance(image, str) or isinstance(image, Image.Image):
+        if isinstance(image, (str, Image.Image)):
             image = image_to_np_ndarray(image)
         self.device = device
         self.results = results
         self.img = image
     
     def _segment_image(self, image, bbox):
-        if isinstance(image, Image.Image):
-            image_array = np.array(image)
-        else:
-            image_array = image
+        image_array = np.array(image) if isinstance(image, Image.Image) else image
         segmented_image_array = np.zeros_like(image_array)
         x1, y1, x2, y2 = bbox
         segmented_image_array[y1:y2, x1:x2] = image_array[y1:y2, x1:x2]
@@ -47,26 +44,24 @@ class FastSAMPrompt:
         annotations = []
         n = len(result.masks.data)
         for i in range(n):
-            annotation = {}
             mask = result.masks.data[i] == 1.0
 
             if torch.sum(mask) < filter:
                 continue
-            annotation['id'] = i
-            annotation['segmentation'] = mask.cpu().numpy()
+            annotation = {'id': i, 'segmentation': mask.cpu().numpy()}
             annotation['bbox'] = result.boxes.data[i]
             annotation['score'] = result.boxes.conf[i]
             annotation['area'] = annotation['segmentation'].sum()
             annotations.append(annotation)
         return annotations
 
-    def filter_masks(annotations):  # filte the overlap mask
-        annotations.sort(key=lambda x: x['area'], reverse=True)
+    def filter_masks(self):  # filte the overlap mask
+        self.sort(key=lambda x: x['area'], reverse=True)
         to_remove = set()
-        for i in range(0, len(annotations)):
-            a = annotations[i]
-            for j in range(i + 1, len(annotations)):
-                b = annotations[j]
+        for i in range(0, len(self)):
+            a = self[i]
+            for j in range(i + 1, len(self)):
+                b = self[j]
                 if i != j and j not in to_remove:
                     # check if
                     if b['area'] < a['area']:
@@ -166,10 +161,9 @@ class FastSAMPrompt:
                         interpolation=cv2.INTER_NEAREST,
                     )
                 contours, hierarchy = cv2.findContours(annotation, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-                for contour in contours:
-                    contour_all.append(contour)
+                contour_all.extend(iter(contours))
             cv2.drawContours(temp, contour_all, -1, (255, 255, 255), 2)
-            color = np.array([0 / 255, 0 / 255, 255 / 255, 0.8])
+            color = np.array([0 / 255, 0 / 255, 1, 0.8])
             contour_mask = temp / 255 * color.reshape(1, 1, -1)
             plt.imshow(contour_mask)
 
@@ -243,7 +237,7 @@ class FastSAMPrompt:
         if random_color:
             color = np.random.random((msak_sum, 1, 1, 3))
         else:
-            color = np.ones((msak_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 255 / 255])
+            color = np.ones((msak_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 1])
         transparency = np.ones((msak_sum, 1, 1, 1)) * 0.6
         visual = np.concatenate([color, transparency], axis=-1)
         mask_image = np.expand_dims(annotation, -1) * visual
@@ -299,8 +293,9 @@ class FastSAMPrompt:
         if random_color:
             color = torch.rand((msak_sum, 1, 1, 3)).to(annotation.device)
         else:
-            color = torch.ones((msak_sum, 1, 1, 3)).to(annotation.device) * torch.tensor([
-                30 / 255, 144 / 255, 255 / 255]).to(annotation.device)
+            color = torch.ones((msak_sum, 1, 1, 3)).to(
+                annotation.device
+            ) * torch.tensor([30 / 255, 144 / 255, 1]).to(annotation.device)
         transparency = torch.ones((msak_sum, 1, 1, 1)).to(annotation.device) * 0.6
         visual = torch.cat([color, transparency], dim=-1)
         mask_image = torch.unsqueeze(annotation, -1) * visual
@@ -375,7 +370,7 @@ class FastSAMPrompt:
         return cropped_boxes, cropped_images, not_crop, filter_id, annotations
 
     def box_prompt(self, bbox=None, bboxes=None):
-        if self.results == None:
+        if self.results is None:
             return []
         assert bbox or bboxes
         if bboxes is None:
@@ -394,10 +389,10 @@ class FastSAMPrompt:
                     int(bbox[1] * h / target_height),
                     int(bbox[2] * w / target_width),
                     int(bbox[3] * h / target_height), ]
-            bbox[0] = round(bbox[0]) if round(bbox[0]) > 0 else 0
-            bbox[1] = round(bbox[1]) if round(bbox[1]) > 0 else 0
-            bbox[2] = round(bbox[2]) if round(bbox[2]) < w else w
-            bbox[3] = round(bbox[3]) if round(bbox[3]) < h else h
+            bbox[0] = max(round(bbox[0]), 0)
+            bbox[1] = max(round(bbox[1]), 0)
+            bbox[2] = min(round(bbox[2]), w)
+            bbox[3] = min(round(bbox[3]), h)
 
             # IoUs = torch.zeros(len(masks), dtype=torch.float32)
             bbox_area = (bbox[3] - bbox[1]) * (bbox[2] - bbox[0])
@@ -412,7 +407,7 @@ class FastSAMPrompt:
         return np.array(masks[max_iou_index].cpu().numpy())
 
     def point_prompt(self, points, pointlabel):  # numpy 
-        if self.results == None:
+        if self.results is None:
             return []
         masks = self._format_results(self.results[0], 0)
         target_height = self.img.shape[0]
@@ -424,10 +419,7 @@ class FastSAMPrompt:
         onemask = np.zeros((h, w))
         masks = sorted(masks, key=lambda x: x['area'], reverse=True)
         for i, annotation in enumerate(masks):
-            if type(annotation) == dict:
-                mask = annotation['segmentation']
-            else:
-                mask = annotation
+            mask = annotation['segmentation'] if type(annotation) == dict else annotation
             for i, point in enumerate(points):
                 if mask[point[1], point[0]] == 1 and pointlabel[i] == 1:
                     onemask[mask] = 1
@@ -437,7 +429,7 @@ class FastSAMPrompt:
         return np.array([onemask])
 
     def text_prompt(self, text):
-        if self.results == None:
+        if self.results is None:
             return []
         format_results = self._format_results(self.results[0], 0)
         cropped_boxes, cropped_images, not_crop, filter_id, annotations = self._crop_image(format_results)
@@ -449,7 +441,5 @@ class FastSAMPrompt:
         return np.array([annotations[max_idx]['segmentation']])
 
     def everything_prompt(self):
-        if self.results == None:
-            return []
-        return self.results[0].masks.data
+        return [] if self.results is None else self.results[0].masks.data
         

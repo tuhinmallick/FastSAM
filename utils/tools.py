@@ -11,11 +11,10 @@ import clip
 def convert_box_xywh_to_xyxy(box):
     if len(box) == 4:
         return [box[0], box[1], box[0] + box[2], box[1] + box[3]]
-    else:
-        result = []
-        for b in box:
-            b = convert_box_xywh_to_xyxy(b)
-            result.append(b)               
+    result = []
+    for b in box:
+        b = convert_box_xywh_to_xyxy(b)
+        result.append(b)
     return result
 
 
@@ -40,13 +39,11 @@ def format_results(result, filter=0):
     annotations = []
     n = len(result.masks.data)
     for i in range(n):
-        annotation = {}
         mask = result.masks.data[i] == 1.0
 
         if torch.sum(mask) < filter:
             continue
-        annotation["id"] = i
-        annotation["segmentation"] = mask.cpu().numpy()
+        annotation = {"id": i, "segmentation": mask.cpu().numpy()}
         annotation["bbox"] = result.boxes.data[i]
         annotation["score"] = result.boxes.conf[i]
         annotation["area"] = annotation["segmentation"].sum()
@@ -60,9 +57,8 @@ def filter_masks(annotations):  # filter the overlap mask
     for i in range(0, len(annotations)):
         a = annotations[i]
         for j in range(i + 1, len(annotations)):
-            b = annotations[j]
             if i != j and j not in to_remove:
-                # check if
+                b = annotations[j]
                 if b["area"] < a["area"]:
                     if (a["segmentation"] & b["segmentation"]).sum() / b[
                         "segmentation"
@@ -166,10 +162,9 @@ def fast_process(
             contours, hierarchy = cv2.findContours(
                 annotation, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
             )
-            for contour in contours:
-                contour_all.append(contour)
+            contour_all.extend(iter(contours))
         cv2.drawContours(temp, contour_all, -1, (255, 255, 255), 2)
-        color = np.array([0 / 255, 0 / 255, 255 / 255, 0.8])
+        color = np.array([0 / 255, 0 / 255, 1, 0.8])
         contour_mask = temp / 255 * color.reshape(1, 1, -1)
         plt.imshow(contour_mask)
 
@@ -179,13 +174,13 @@ def fast_process(
     plt.axis("off")
     fig = plt.gcf()
     plt.draw()
-    
+
     try:
         buf = fig.canvas.tostring_rgb()
     except AttributeError:
         fig.canvas.draw()
         buf = fig.canvas.tostring_rgb()
-    
+
     cols, rows = fig.canvas.get_width_height()
     img_array = np.fromstring(buf, dtype=np.uint8).reshape(rows, cols, 3)
     cv2.imwrite(os.path.join(save_path, result_name), cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR))
@@ -215,9 +210,7 @@ def fast_show_mask(
     if random_color == True:
         color = np.random.random((msak_sum, 1, 1, 3))
     else:
-        color = np.ones((msak_sum, 1, 1, 3)) * np.array(
-            [30 / 255, 144 / 255, 255 / 255]
-        )
+        color = (np.ones((msak_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 1]))
     transparency = np.ones((msak_sum, 1, 1, 1)) * 0.6
     visual = np.concatenate([color, transparency], axis=-1)
     mask_image = np.expand_dims(annotation, -1) * visual
@@ -280,9 +273,9 @@ def fast_show_mask_gpu(
     if random_color == True:
         color = torch.rand((msak_sum, 1, 1, 3)).to(annotation.device)
     else:
-        color = torch.ones((msak_sum, 1, 1, 3)).to(annotation.device) * torch.tensor(
-            [30 / 255, 144 / 255, 255 / 255]
-        ).to(annotation.device)
+        color = torch.ones((msak_sum, 1, 1, 3)).to(
+            annotation.device
+        ) * torch.tensor([30 / 255, 144 / 255, 1]).to(annotation.device)
     transparency = torch.ones((msak_sum, 1, 1, 1)).to(annotation.device) * 0.6
     visual = torch.cat([color, transparency], dim=-1)
     mask_image = torch.unsqueeze(annotation, -1) * visual
@@ -340,10 +333,7 @@ def retriev(
 
 
 def crop_image(annotations, image_like):
-    if isinstance(image_like, str):
-        image = Image.open(image_like)
-    else:
-        image = image_like
+    image = Image.open(image_like) if isinstance(image_like, str) else image_like
     ori_w, ori_h = image.size
     mask_h, mask_w = annotations[0]["segmentation"].shape
     if ori_w != mask_w or ori_h != mask_h:
@@ -373,10 +363,10 @@ def box_prompt(masks, bbox, target_height, target_width):
             int(bbox[2] * w / target_width),
             int(bbox[3] * h / target_height),
         ]
-    bbox[0] = round(bbox[0]) if round(bbox[0]) > 0 else 0
-    bbox[1] = round(bbox[1]) if round(bbox[1]) > 0 else 0
-    bbox[2] = round(bbox[2]) if round(bbox[2]) < w else w
-    bbox[3] = round(bbox[3]) if round(bbox[3]) < h else h
+    bbox[0] = max(round(bbox[0]), 0)
+    bbox[1] = max(round(bbox[1]), 0)
+    bbox[2] = min(round(bbox[2]), w)
+    bbox[3] = min(round(bbox[3]), h)
 
     # IoUs = torch.zeros(len(masks), dtype=torch.float32)
     bbox_area = (bbox[3] - bbox[1]) * (bbox[2] - bbox[0])
@@ -402,10 +392,7 @@ def point_prompt(masks, points, point_label, target_height, target_width):  # nu
     onemask = np.zeros((h, w))
     masks = sorted(masks, key=lambda x: x['area'], reverse=True)
     for i, annotation in enumerate(masks):
-        if type(annotation) == dict:
-            mask = annotation['segmentation']
-        else:
-            mask = annotation
+        mask = annotation['segmentation'] if type(annotation) == dict else annotation
         for i, point in enumerate(points):
             if mask[point[1], point[0]] == 1 and point_label[i] == 1:
                 onemask[mask] = 1

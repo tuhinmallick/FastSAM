@@ -67,10 +67,9 @@ def fast_process(
                     interpolation=cv2.INTER_NEAREST,
                 )
             contours, _ = cv2.findContours(annotation, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-            for contour in contours:
-                contour_all.append(contour)
+            contour_all.extend(iter(contours))
         cv2.drawContours(temp, contour_all, -1, (255, 255, 255), 2 // scale)
-        color = np.array([0 / 255, 0 / 255, 255 / 255, 0.9])
+        color = np.array([0 / 255, 0 / 255, 1, 0.9])
         contour_mask = temp / 255 * color.reshape(1, 1, -1)
 
     image = image.convert('RGBA')
@@ -106,7 +105,7 @@ def fast_show_mask(
     if random_color:
         color = np.random.random((mask_sum, 1, 1, 3))
     else:
-        color = np.ones((mask_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 255 / 255])
+        color = np.ones((mask_sum, 1, 1, 3)) * np.array([30 / 255, 144 / 255, 1])
     transparency = np.ones((mask_sum, 1, 1, 1)) * 0.6
     visual = np.concatenate([color, transparency], axis=-1)
     mask_image = np.expand_dims(annotation, -1) * visual
@@ -149,7 +148,7 @@ def fast_show_mask_gpu(
         color = torch.rand((mask_sum, 1, 1, 3)).to(device)
     else:
         color = torch.ones((mask_sum, 1, 1, 3)).to(device) * torch.tensor(
-            [30 / 255, 144 / 255, 255 / 255]
+            [30 / 255, 144 / 255, 1]
         ).to(device)
     transparency = torch.ones((mask_sum, 1, 1, 1)).to(device) * 0.6
     visual = torch.cat([color, transparency], dim=-1)

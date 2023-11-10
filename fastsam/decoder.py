@@ -45,17 +45,14 @@ class FastSAMDecoder:
             point_label: Optional[np.ndarray]=None,
             box_prompt: Optional[np.ndarray]=None,
             text_prompt: Optional[str]=None,
-            )->np.ndarray:
+            ) -> np.ndarray:
         self.image_embedding = image_embedding
         if point_prompt is not None:
-            ann = self.point_prompt(points=point_prompt, pointlabel=point_label)
-            return ann
+            return self.point_prompt(points=point_prompt, pointlabel=point_label)
         elif box_prompt is not None:
-            ann = self.box_prompt(bbox=box_prompt)
-            return ann
+            return self.box_prompt(bbox=box_prompt)
         elif text_prompt is not None:
-            ann = self.text_prompt(text=text_prompt)
-            return ann
+            return self.text_prompt(text=text_prompt)
         else:
             return None
 
@@ -72,10 +69,10 @@ class FastSAMDecoder:
                 int(bbox[1] * h / target_height),
                 int(bbox[2] * w / target_width),
                 int(bbox[3] * h / target_height), ]
-        bbox[0] = round(bbox[0]) if round(bbox[0]) > 0 else 0
-        bbox[1] = round(bbox[1]) if round(bbox[1]) > 0 else 0
-        bbox[2] = round(bbox[2]) if round(bbox[2]) < w else w
-        bbox[3] = round(bbox[3]) if round(bbox[3]) < h else h
+        bbox[0] = max(round(bbox[0]), 0)
+        bbox[1] = max(round(bbox[1]), 0)
+        bbox[2] = min(round(bbox[2]), w)
+        bbox[3] = min(round(bbox[3]), h)
 
         # IoUs = torch.zeros(len(masks), dtype=torch.float32)
         bbox_area = (bbox[3] - bbox[1]) * (bbox[2] - bbox[0])
@@ -101,10 +98,7 @@ class FastSAMDecoder:
         onemask = np.zeros((h, w))
         masks = sorted(masks, key=lambda x: x['area'], reverse=True)
         for i, annotation in enumerate(masks):
-            if type(annotation) == dict:
-                mask = annotation['segmentation']
-            else:
-                mask = annotation
+            mask = annotation['segmentation'] if type(annotation) == dict else annotation
             for i, point in enumerate(points):
                 if mask[point[1], point[0]] == 1 and pointlabel[i] == 1:
                     onemask[mask] = 1
@@ -117,15 +111,16 @@ class FastSAMDecoder:
         annotations = []
         n = len(result.masks.data)
         for i in range(n):
-            annotation = {}
             mask = result.masks.data[i] == 1.0
 
             if np.sum(mask) < filter:
                 continue
-            annotation['id'] = i
-            annotation['segmentation'] = mask
-            annotation['bbox'] = result.boxes.data[i]
-            annotation['score'] = result.boxes.conf[i]
+            annotation = {
+                'id': i,
+                'segmentation': mask,
+                'bbox': result.boxes.data[i],
+                'score': result.boxes.conf[i],
+            }
             annotation['area'] = annotation['segmentation'].sum()
             annotations.append(annotation)
         return annotations
